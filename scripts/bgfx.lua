@@ -71,11 +71,11 @@ function bgfxProject(_name, _kind, _defines)
 				linkoptions {
 					"-shared",
 				}
-				configuration { "Debug" }
+				configuration { "android-*", "Debug" }
 					linkoptions {
 						"-Wl,-soname,libbgfx-shared-libDebug.so",
 					}
-				configuration { "Release" }
+				configuration { "android-*", "Release" }
 					linkoptions {
 						"-Wl,-soname,libbgfx-shared-libRelease.so",
 					}
