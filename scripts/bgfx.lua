@@ -71,6 +71,14 @@ function bgfxProject(_name, _kind, _defines)
 				linkoptions {
 					"-shared",
 				}
+				configuration { "Debug" }
+					linkoptions {
+						"-Wl,-soname,libbgfx-shared-libDebug.so",
+					}
+				configuration { "Release" }
+					linkoptions {
+						"-Wl,-soname,libbgfx-shared-libRelease.so",
+					}
 
 			configuration {}
 		end
