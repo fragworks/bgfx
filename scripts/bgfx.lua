@@ -65,6 +65,12 @@ function bgfxProject(_name, _kind, _defines)
 				buildoptions {
 					"-fPIC",
 				}
+			
+			configuration { "android-*" }
+				targetextension ".so"
+				linkoptions {
+					"-shared",
+				}
 
 			configuration {}
 		end
