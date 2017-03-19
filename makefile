@@ -49,7 +49,7 @@ projgen: ## Generate project files for all configurations.
 	$(GENIE) --with-tools --with-examples --with-shared-lib --xcode=osx         xcode4
 	$(GENIE) --with-tools --with-examples --with-shared-lib --xcode=ios         xcode4
 	$(GENIE)              --with-examples --with-shared-lib --gcc=freebsd       gmake
-	$(GENIE)              --with-examples                   --gcc=android-arm   gmake
+	$(GENIE)              --with-examples --with-shared-lib --gcc=android-arm   gmake
 	$(GENIE)              --with-examples                   --gcc=android-mips  gmake
 	$(GENIE)              --with-examples                   --gcc=android-x86   gmake
 	$(GENIE)              --with-examples                   --gcc=asmjs         gmake
@@ -62,7 +62,7 @@ projgen: ## Generate project files for all configurations.
 	$(GENIE)              --with-examples                   --gcc=rpi           gmake
 
 .build/projects/gmake-android-arm:
-	$(GENIE) --gcc=android-arm gmake
+	$(GENIE) --with-shared-lib --gcc=android-arm gmake
 android-arm-debug: .build/projects/gmake-android-arm ## Build - Android ARM Debug
 	$(MAKE) -R -C .build/projects/gmake-android-arm config=debug
 android-arm-release: .build/projects/gmake-android-arm ## Build - Android ARM Release
