@@ -66,6 +66,16 @@ function bgfxProject(_name, _kind, _defines)
 					"-fPIC",
 				}
 			
+			configuration { "osx", "Debug" }
+				linkoptions {
+					"-install_name '@rpath/libbgfx-shared-libDebug.dylib'",
+				}
+			configuration { "osx", "Release" }
+				linkoptions {
+					"-install_name '@rpath/libbgfx-shared-libRelease.dylib'",
+				}
+
+
 			configuration { "android-*" }
 				targetextension ".so"
 				linkoptions {
