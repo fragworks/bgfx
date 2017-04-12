@@ -910,11 +910,13 @@ namespace bgfx
 		}
 
 		m_renderItem[m_numRenderItems].draw = m_draw;
+		m_renderItemBind[m_numRenderItems]  = m_bind;
 		++m_numRenderItems;
 
 		if (!_preserveState)
 		{
 			m_draw.clear();
+			m_bind.clear();
 			m_uniformBegin = m_uniformEnd;
 			m_stateFlags = BGFX_STATE_NONE;
 		}
@@ -959,9 +961,11 @@ namespace bgfx
 		m_compute.m_constBegin = m_uniformBegin;
 		m_compute.m_constEnd   = m_uniformEnd;
 		m_renderItem[m_numRenderItems].compute = m_compute;
+		m_renderItemBind[m_numRenderItems]     = m_bind;
 		++m_numRenderItems;
 
 		m_compute.clear();
+		m_bind.clear();
 		m_uniformBegin = m_uniformEnd;
 
 		return m_num;
@@ -1655,16 +1659,35 @@ namespace bgfx
 		return m_uniformRef[_handle.idx].m_name.getPtr();
 	}
 
-	RenderFrame::Enum Context::renderFrame(int32_t _msecs)
-	{
-		BGFX_PROFILER_SCOPE(bgfx, render_frame, 0xff2040ff);
+	RendererContextI* rendererCreate(RendererType::Enum _type);
+	void rendererDestroy(RendererContextI* _renderCtx);
 
+	void Context::flip()
+	{
 		if (m_rendererInitialized
-		&& !m_flipAfterRender
 		&& !m_flipped)
 		{
 			m_renderCtx->flip(m_render->m_hmd);
 			m_flipped = true;
+
+			if (m_renderCtx->isDeviceRemoved() )
+			{
+				// Something horribly went wrong, fallback to noop renderer.
+				rendererDestroy(m_renderCtx);
+
+				m_renderCtx = rendererCreate(RendererType::Noop);
+				g_caps.rendererType = RendererType::Noop;
+			}
+		}
+	}
+
+	RenderFrame::Enum Context::renderFrame(int32_t _msecs)
+	{
+		BGFX_PROFILER_SCOPE(bgfx, render_frame, 0xff2040ff);
+
+		if (!m_flipAfterRender)
+		{
+			flip();
 		}
 
 		if (apiSemWait(_msecs) )
@@ -1680,11 +1703,9 @@ namespace bgfx
 
 			renderSemPost();
 
-			if (m_rendererInitialized
-			&&  m_flipAfterRender)
+			if (m_flipAfterRender)
 			{
-				m_renderCtx->flip(m_render->m_hmd);
-				m_flipped = true;
+				flip();
 			}
 		}
 		else
@@ -1830,7 +1851,7 @@ namespace bgfx
 
 	static RendererCreator s_rendererCreator[] =
 	{
-		{ noop::rendererCreate,  noop::rendererDestroy,  BGFX_RENDERER_NOOP_NAME,       !!BGFX_CONFIG_RENDERER_NOOP       }, // Noop
+		{ noop::rendererCreate,  noop::rendererDestroy,  BGFX_RENDERER_NOOP_NAME,       true                              }, // Noop
 		{ d3d9::rendererCreate,  d3d9::rendererDestroy,  BGFX_RENDERER_DIRECT3D9_NAME,  !!BGFX_CONFIG_RENDERER_DIRECT3D9  }, // Direct3D9
 		{ d3d11::rendererCreate, d3d11::rendererDestroy, BGFX_RENDERER_DIRECT3D11_NAME, !!BGFX_CONFIG_RENDERER_DIRECT3D11 }, // Direct3D11
 		{ d3d12::rendererCreate, d3d12::rendererDestroy, BGFX_RENDERER_DIRECT3D12_NAME, !!BGFX_CONFIG_RENDERER_DIRECT3D12 }, // Direct3D12
@@ -1845,8 +1866,6 @@ namespace bgfx
 		{ vk::rendererCreate,    vk::rendererDestroy,    BGFX_RENDERER_VULKAN_NAME,     !!BGFX_CONFIG_RENDERER_VULKAN     }, // Vulkan
 	};
 	BX_STATIC_ASSERT(BX_COUNTOF(s_rendererCreator) == RendererType::Count);
-
-	static RendererDestroyFn s_rendererDestroyFn;
 
 	struct Condition
 	{
@@ -1970,7 +1989,6 @@ namespace bgfx
 			renderCtx = s_rendererCreator[renderer].createFn();
 			if (NULL != renderCtx)
 			{
-				s_rendererDestroyFn = s_rendererCreator[renderer].destroyFn;
 				break;
 			}
 
@@ -1980,9 +1998,12 @@ namespace bgfx
 		return renderCtx;
 	}
 
-	void rendererDestroy()
+	void rendererDestroy(RendererContextI* _renderCtx)
 	{
-		s_rendererDestroyFn();
+		if (NULL != _renderCtx)
+		{
+			s_rendererCreator[_renderCtx->getRendererType()].destroyFn();
+		}
 	}
 
 	void Context::rendererExecCommands(CommandBuffer& _cmdbuf)
@@ -2017,6 +2038,7 @@ namespace bgfx
 					_cmdbuf.read(type);
 
 					m_renderCtx = rendererCreate(type);
+
 					m_rendererInitialized = NULL != m_renderCtx;
 
 					if (!m_rendererInitialized)
@@ -2049,8 +2071,10 @@ namespace bgfx
 			case CommandBuffer::RendererShutdownEnd:
 				{
 					BX_CHECK(!m_rendererInitialized && !m_exit, "This shouldn't happen! Bad synchronization?");
-					rendererDestroy();
+
+					rendererDestroy(m_renderCtx);
 					m_renderCtx = NULL;
+
 					m_exit = true;
 				}
 				// fall through
@@ -2350,7 +2374,7 @@ namespace bgfx
 					uint8_t mip;
 					_cmdbuf.read(mip);
 
-					m_renderCtx->readTexture(handle, data,mip);
+					m_renderCtx->readTexture(handle, data, mip);
 				}
 				break;
 

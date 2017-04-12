@@ -455,6 +455,35 @@ namespace bgfx { namespace d3d11
 			;
 	}
 
+	static const char* getLostReason(HRESULT _hr)
+	{
+		switch (_hr)
+		{
+		// The GPU device instance has been suspended. Use GetDeviceRemovedReason to determine the appropriate action.
+		case DXGI_ERROR_DEVICE_REMOVED: return "DXGI_ERROR_DEVICE_REMOVED";
+
+		// The GPU will not respond to more commands, most likely because of an invalid command passed by the calling application.
+		case DXGI_ERROR_DEVICE_HUNG: return "DXGI_ERROR_DEVICE_HUNG";
+
+		// The GPU will not respond to more commands, most likely because some other application submitted invalid commands.
+		// The calling application should re-create the device and continue.
+		case DXGI_ERROR_DEVICE_RESET: return "DXGI_ERROR_DEVICE_RESET";
+
+		// An internal issue prevented the driver from carrying out the specified operation. The driver's state is probably
+		// suspect, and the application should not continue.
+		case DXGI_ERROR_DRIVER_INTERNAL_ERROR: return "DXGI_ERROR_DRIVER_INTERNAL_ERROR";
+
+		// A resource is not available at the time of the call, but may become available later.
+		case DXGI_ERROR_NOT_CURRENTLY_AVAILABLE: return "DXGI_ERROR_NOT_CURRENTLY_AVAILABLE";
+
+		case S_OK: return "S_OK";
+
+		default: break;
+		}
+
+		return "Unknown HRESULT?";
+	}
+
 	template <typename Ty>
 	static BX_NO_INLINE void setDebugObjectName(Ty* _interface, const char* _format, ...)
 	{
@@ -654,7 +683,7 @@ namespace bgfx { namespace d3d11
 			, m_adapter(NULL)
 			, m_factory(NULL)
 			, m_swapChain(NULL)
-			, m_lost(0)
+			, m_lost(false)
 			, m_numWindows(0)
 			, m_device(NULL)
 			, m_deviceCtx(NULL)
@@ -2263,9 +2292,15 @@ BX_PRAGMA_DIAGNOSTIC_POP();
 			capturePostReset();
 		}
 
+		bool isDeviceRemoved() BX_OVERRIDE
+		{
+			return m_lost;
+		}
+
 		void flip(HMD& _hmd) BX_OVERRIDE
 		{
-			if (NULL != m_swapChain)
+			if (NULL != m_swapChain
+			&&  !m_lost)
 			{
 				HRESULT hr = S_OK;
 				uint32_t syncInterval = BX_ENABLED(!BX_PLATFORM_WINDOWS)
@@ -2298,15 +2333,14 @@ BX_PRAGMA_DIAGNOSTIC_POP();
 					}
 				}
 
-				if (isLost(hr) )
-				{
-					++m_lost;
-					BGFX_FATAL(10 > m_lost, bgfx::Fatal::DeviceLost, "Device is lost. FAILED 0x%08x", hr);
-				}
-				else
-				{
-					m_lost = 0;
-				}
+				m_lost = isLost(hr);
+				BGFX_FATAL(!m_lost
+					, bgfx::Fatal::DeviceLost
+					, "Device is lost. FAILED 0x%08x %s (%s)"
+					, hr
+					, getLostReason(hr)
+					, DXGI_ERROR_DEVICE_REMOVED == hr ? getLostReason(m_device->GetDeviceRemovedReason() ) : "no info"
+					);
 			}
 		}
 
@@ -3551,7 +3585,7 @@ BX_PRAGMA_DIAGNOSTIC_POP();
 #endif // BX_PLATFORM_WINDOWS
 
 		bool m_needPresent;
-		uint16_t m_lost;
+		bool m_lost;
 		uint16_t m_numWindows;
 		FrameBufferHandle m_windows[BGFX_CONFIG_MAX_FRAME_BUFFERS];
 
@@ -5273,7 +5307,8 @@ BX_PRAGMA_DIAGNOSTIC_POP();
 
 	void RendererContextD3D11::submit(Frame* _render, ClearQuad& _clearQuad, TextVideoMemBlitter& _textVideoMemBlitter)
 	{
-		if (updateResolution(_render->m_resolution) )
+		if (m_lost
+		||  updateResolution(_render->m_resolution) )
 		{
 			return;
 		}
@@ -5314,6 +5349,9 @@ BX_PRAGMA_DIAGNOSTIC_POP();
 		currentState.clear();
 		currentState.m_stateFlags = BGFX_STATE_NONE;
 		currentState.m_stencil = packStencil(BGFX_STENCIL_NONE, BGFX_STENCIL_NONE);
+
+		RenderBind currentBind;
+		currentBind.clear();
 
 		_render->m_hmdInitialized = m_ovr.isInitialized();
 
@@ -5378,7 +5416,9 @@ BX_PRAGMA_DIAGNOSTIC_POP();
 					|| item == numItems
 					;
 
-				const RenderItem& renderItem = _render->m_renderItem[_render->m_sortValues[item] ];
+				const uint32_t itemIdx       = _render->m_sortValues[item];
+				const RenderItem& renderItem = _render->m_renderItem[itemIdx];
+				const RenderBind& renderBind = _render->m_renderItemBind[itemIdx];
 				++item;
 
 				if (viewChanged)
@@ -5639,7 +5679,7 @@ BX_PRAGMA_DIAGNOSTIC_POP();
 
 					for (uint32_t ii = 0; ii < BGFX_MAX_COMPUTE_BINDINGS; ++ii)
 					{
-						const Binding& bind = compute.m_bind[ii];
+						const Binding& bind = renderBind.m_bind[ii];
 						if (invalidHandle != bind.m_idx)
 						{
 							switch (bind.m_type)
@@ -5763,6 +5803,8 @@ BX_PRAGMA_DIAGNOSTIC_POP();
 					changedStencil = packStencil(BGFX_STENCIL_MASK, BGFX_STENCIL_MASK);
 					currentState.m_stateFlags = newFlags;
 					currentState.m_stencil    = newStencil;
+
+					currentBind.clear();
 
 					setBlendState(newFlags);
 					setDepthStencilState(newFlags, packStencil(BGFX_STENCIL_DEFAULT, BGFX_STENCIL_DEFAULT) );
@@ -5935,16 +5977,36 @@ BX_PRAGMA_DIAGNOSTIC_POP();
 					uint32_t changes = 0;
 					for (uint8_t stage = 0; stage < BGFX_CONFIG_MAX_TEXTURE_SAMPLERS; ++stage)
 					{
-						const Binding& bind = draw.m_bind[stage];
-						Binding& current = currentState.m_bind[stage];
+						const Binding& bind = renderBind.m_bind[stage];
+						Binding& current = currentBind.m_bind[stage];
 						if (current.m_idx != bind.m_idx
+						||  current.m_type != bind.m_type
 						||  current.m_un.m_draw.m_textureFlags != bind.m_un.m_draw.m_textureFlags
 						||  programChanged)
 						{
 							if (invalidHandle != bind.m_idx)
 							{
-								TextureD3D11& texture = m_textures[bind.m_idx];
-								texture.commit(stage, bind.m_un.m_draw.m_textureFlags, _render->m_colorPalette);
+								switch (bind.m_type)
+								{
+								case Binding::Texture:
+									{
+										TextureD3D11& texture = m_textures[bind.m_idx];
+										texture.commit(stage, bind.m_un.m_draw.m_textureFlags, _render->m_colorPalette);
+									}
+									break;
+
+								case Binding::IndexBuffer:
+								case Binding::VertexBuffer:
+									{
+										const BufferD3D11& buffer = Binding::IndexBuffer == bind.m_type
+											? m_indexBuffers[bind.m_idx]
+											: m_vertexBuffers[bind.m_idx]
+											;
+										m_textureStage.m_srv[stage] = buffer.m_srv;
+										m_textureStage.m_sampler[stage] = NULL;
+									}
+									break;
+								}
 							}
 							else
 							{

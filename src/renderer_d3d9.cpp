@@ -7,6 +7,7 @@
 
 #if BGFX_CONFIG_RENDERER_DIRECT3D9
 #	include "renderer_d3d9.h"
+#	include <bx/pixelformat.h>
 
 namespace bgfx { namespace d3d9
 {
@@ -1456,6 +1457,11 @@ namespace bgfx { namespace d3d9
 		{
 			m_flushQuery->Issue(D3DISSUE_END);
 			m_flushQuery->GetData(NULL, 0, D3DGETDATA_FLUSH);
+		}
+
+		bool isDeviceRemoved() BX_OVERRIDE
+		{
+			return false;
 		}
 
 		void flip(HMD& /*_hmd*/) BX_OVERRIDE
@@ -3640,6 +3646,9 @@ namespace bgfx { namespace d3d9
 		currentState.m_stateFlags = BGFX_STATE_NONE;
 		currentState.m_stencil    = packStencil(BGFX_STENCIL_NONE, BGFX_STENCIL_NONE);
 
+		RenderBind currentBind;
+		currentBind.clear();
+
 		ViewState viewState(_render, false);
 
 		DX_CHECK(device->SetRenderState(D3DRS_FILLMODE, _render->m_debug&BGFX_DEBUG_WIREFRAME ? D3DFILL_WIREFRAME : D3DFILL_SOLID) );
@@ -3692,7 +3701,9 @@ namespace bgfx { namespace d3d9
 					continue;
 				}
 
-				const RenderDraw& draw = _render->m_renderItem[_render->m_sortValues[item] ].draw;
+				const uint32_t itemIdx = _render->m_sortValues[item];
+				const RenderDraw& draw = _render->m_renderItem[itemIdx].draw;
+				const RenderBind& renderBind = _render->m_renderItemBind[itemIdx];
 
 				const bool hasOcclusionQuery = 0 != (draw.m_stateFlags & BGFX_STATE_INTERNAL_OCCLUSION_QUERY);
 				if (isValid(draw.m_occlusionQuery)
@@ -4092,8 +4103,9 @@ namespace bgfx { namespace d3d9
 				{
 					for (uint8_t stage = 0; stage < BGFX_CONFIG_MAX_TEXTURE_SAMPLERS; ++stage)
 					{
-						const Binding& bind = draw.m_bind[stage];
-						Binding& current = currentState.m_bind[stage];
+						const Binding& bind = renderBind.m_bind[stage];
+						Binding& current = currentBind.m_bind[stage];
+
 						if (current.m_idx != bind.m_idx
 						||  current.m_un.m_draw.m_textureFlags != bind.m_un.m_draw.m_textureFlags
 						||  programChanged)

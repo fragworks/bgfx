@@ -1412,6 +1412,16 @@ namespace bgfx { namespace gl
 		{ "Intel",                        BGFX_PCI_ID_INTEL  },
 	};
 
+	struct Workaround
+	{
+		void reset()
+		{
+			m_detachShader = true;
+		}
+
+		bool m_detachShader;
+	};
+
 	struct RendererContextGL : public RendererContextI
 	{
 		RendererContextGL()
@@ -1481,6 +1491,8 @@ namespace bgfx { namespace gl
 					break;
 				}
 			}
+
+			m_workaround.reset();
 
 			GLint numCmpFormats = 0;
 			GL_CHECK(glGetIntegerv(GL_NUM_COMPRESSED_TEXTURE_FORMATS, &numCmpFormats) );
@@ -2275,6 +2287,11 @@ namespace bgfx { namespace gl
 		const char* getRendererName() const BX_OVERRIDE
 		{
 			return BGFX_RENDERER_OPENGL_NAME;
+		}
+
+		bool isDeviceRemoved() BX_OVERRIDE
+		{
+			return false;
 		}
 
 		void flip(HMD& _hmd)
@@ -3520,6 +3537,8 @@ namespace bgfx { namespace gl
 		const char* m_version;
 		const char* m_glslVersion;
 
+		Workaround m_workaround;
+
 		GLuint m_currentFbo;
 
 		VR m_ovr;
@@ -4018,7 +4037,8 @@ namespace bgfx { namespace gl
 
 		init();
 
-		if (!cached)
+		if (!cached
+		&&  s_renderGL->m_workaround.m_detachShader)
 		{
 			// Must be after init, otherwise init might fail to lookup shader
 			// info (NVIDIA Tegra 3 OpenGL ES 2.0 14.01003).
@@ -6244,6 +6264,9 @@ namespace bgfx { namespace gl
 		currentState.m_stateFlags = BGFX_STATE_NONE;
 		currentState.m_stencil    = packStencil(BGFX_STENCIL_NONE, BGFX_STENCIL_NONE);
 
+		RenderBind currentBind;
+		currentBind.clear();
+
 		_render->m_hmdInitialized = m_ovr.isInitialized();
 
 		const bool hmdEnabled = m_ovr.isEnabled();
@@ -6324,7 +6347,9 @@ namespace bgfx { namespace gl
 					|| item == numItems
 					;
 
-				const RenderItem& renderItem = _render->m_renderItem[_render->m_sortValues[item] ];
+				const uint32_t itemIdx       = _render->m_sortValues[item];
+				const RenderItem& renderItem = _render->m_renderItem[itemIdx];
+				const RenderBind& renderBind = _render->m_renderItemBind[itemIdx];
 				++item;
 
 				if (viewChanged)
@@ -6499,7 +6524,7 @@ namespace bgfx { namespace gl
 						GLbitfield barrier = 0;
 						for (uint32_t ii = 0; ii < BGFX_MAX_COMPUTE_BINDINGS; ++ii)
 						{
-							const Binding& bind = compute.m_bind[ii];
+							const Binding& bind = renderBind.m_bind[ii];
 							if (invalidHandle != bind.m_idx)
 							{
 								switch (bind.m_type)
@@ -6630,6 +6655,8 @@ namespace bgfx { namespace gl
 					changedStencil = packStencil(BGFX_STENCIL_MASK, BGFX_STENCIL_MASK);
 					currentState.m_stateFlags = newFlags;
 					currentState.m_stencil    = newStencil;
+
+					currentBind.clear();
 				}
 
 				uint16_t scissor = draw.m_scissor;
@@ -6985,16 +7012,40 @@ namespace bgfx { namespace gl
 					{
 						for (uint32_t stage = 0; stage < BGFX_CONFIG_MAX_TEXTURE_SAMPLERS; ++stage)
 						{
-							const Binding& bind = draw.m_bind[stage];
-							Binding& current = currentState.m_bind[stage];
+							const Binding& bind = renderBind.m_bind[stage];
+							Binding& current = currentBind.m_bind[stage];
 							if (current.m_idx != bind.m_idx
+							||  current.m_type != bind.m_type
 							||  current.m_un.m_draw.m_textureFlags != bind.m_un.m_draw.m_textureFlags
 							||  programChanged)
 							{
 								if (invalidHandle != bind.m_idx)
 								{
-									TextureGL& texture = m_textures[bind.m_idx];
-									texture.commit(stage, bind.m_un.m_draw.m_textureFlags, _render->m_colorPalette);
+									switch (bind.m_type)
+									{
+									case Binding::Texture:
+										{
+											TextureGL& texture = m_textures[bind.m_idx];
+											texture.commit(stage, bind.m_un.m_draw.m_textureFlags, _render->m_colorPalette);
+										}
+										break;
+
+									case Binding::IndexBuffer:
+										{
+											const IndexBufferGL& buffer = m_indexBuffers[bind.m_idx];
+											GL_CHECK(glBindBufferBase(GL_SHADER_STORAGE_BUFFER, stage, buffer.m_id) );
+											// TODO: barriers?
+										}
+										break;
+
+									case Binding::VertexBuffer:
+										{
+											const VertexBufferGL& buffer = m_vertexBuffers[bind.m_idx];
+											GL_CHECK(glBindBufferBase(GL_SHADER_STORAGE_BUFFER, stage, buffer.m_id) );
+											// TODO: barriers?
+										}
+										break;
+									}
 								}
 							}
 

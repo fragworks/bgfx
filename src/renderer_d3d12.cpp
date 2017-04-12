@@ -432,6 +432,46 @@ namespace bgfx { namespace d3d12
 		return createCommittedResource(_device, _heapProperty, &resourceDesc, NULL);
 	}
 
+	inline bool isLost(HRESULT _hr)
+	{
+		return false
+			|| _hr == DXGI_ERROR_DEVICE_REMOVED
+			|| _hr == DXGI_ERROR_DEVICE_HUNG
+			|| _hr == DXGI_ERROR_DEVICE_RESET
+			|| _hr == DXGI_ERROR_DRIVER_INTERNAL_ERROR
+			|| _hr == DXGI_ERROR_NOT_CURRENTLY_AVAILABLE
+			;
+	}
+
+	static const char* getLostReason(HRESULT _hr)
+	{
+		switch (_hr)
+		{
+		// The GPU device instance has been suspended. Use GetDeviceRemovedReason to determine the appropriate action.
+		case DXGI_ERROR_DEVICE_REMOVED: return "DXGI_ERROR_DEVICE_REMOVED";
+
+		// The GPU will not respond to more commands, most likely because of an invalid command passed by the calling application.
+		case DXGI_ERROR_DEVICE_HUNG: return "DXGI_ERROR_DEVICE_HUNG";
+
+		// The GPU will not respond to more commands, most likely because some other application submitted invalid commands.
+		// The calling application should re-create the device and continue.
+		case DXGI_ERROR_DEVICE_RESET: return "DXGI_ERROR_DEVICE_RESET";
+
+		// An internal issue prevented the driver from carrying out the specified operation. The driver's state is probably
+		// suspect, and the application should not continue.
+		case DXGI_ERROR_DRIVER_INTERNAL_ERROR: return "DXGI_ERROR_DRIVER_INTERNAL_ERROR";
+
+		// A resource is not available at the time of the call, but may become available later.
+		case DXGI_ERROR_NOT_CURRENTLY_AVAILABLE: return "DXGI_ERROR_NOT_CURRENTLY_AVAILABLE";
+
+		case S_OK: return "S_OK";
+
+		default: break;
+		}
+
+		return "Unknown HRESULT?";
+	}
+
 	BX_NO_INLINE void setDebugObjectName(ID3D12Object* _object, const char* _format, ...)
 	{
 		if (BX_ENABLED(BGFX_CONFIG_DEBUG_OBJECT_NAME) )
@@ -467,6 +507,7 @@ namespace bgfx { namespace d3d12
 			, m_renderdocdll(NULL)
 			, m_featureLevel(D3D_FEATURE_LEVEL(0) )
 			, m_wireframe(false)
+			, m_lost(false)
 			, m_maxAnisotropy(1)
 			, m_depthClamp(false)
 			, m_fsChanges(0)
@@ -1260,19 +1301,15 @@ namespace bgfx { namespace d3d12
 			return BGFX_RENDERER_DIRECT3D12_NAME;
 		}
 
-		static bool isLost(HRESULT _hr)
+		bool isDeviceRemoved() BX_OVERRIDE
 		{
-			return DXGI_ERROR_DEVICE_REMOVED == _hr
-				|| DXGI_ERROR_DEVICE_HUNG == _hr
-				|| DXGI_ERROR_DEVICE_RESET == _hr
-				|| DXGI_ERROR_DRIVER_INTERNAL_ERROR == _hr
-				|| DXGI_ERROR_NOT_CURRENTLY_AVAILABLE == _hr
-				;
+			return m_lost;
 		}
 
 		void flip(HMD& /*_hmd*/) BX_OVERRIDE
 		{
-			if (NULL != m_swapChain)
+			if (NULL != m_swapChain
+			&&  !m_lost)
 			{
 				int64_t start = bx::getHPCounter();
 
@@ -1293,16 +1330,14 @@ namespace bgfx { namespace d3d12
 				int64_t now = bx::getHPCounter();
 				m_presentElapsed = now - start;
 
-				if (FAILED(hr)
-				&&  isLost(hr) )
-				{
-					++m_lost;
-					BGFX_FATAL(10 > m_lost, bgfx::Fatal::DeviceLost, "Device is lost. FAILED 0x%08x", hr);
-				}
-				else
-				{
-					m_lost = 0;
-				}
+				m_lost = isLost(hr);
+				BGFX_FATAL(!m_lost
+					, bgfx::Fatal::DeviceLost
+					, "Device is lost. FAILED 0x%08x %s (%s)"
+					, hr
+					, getLostReason(hr)
+					, DXGI_ERROR_DEVICE_REMOVED == hr ? getLostReason(m_device->GetDeviceRemovedReason() ) : "no info"
+					);
 			}
 		}
 
@@ -1864,7 +1899,7 @@ data.NumQualityLevels = 0;
 			}
 		}
 
-		void updateResolution(const Resolution& _resolution)
+		bool updateResolution(const Resolution& _resolution)
 		{
 			if (!!(_resolution.m_flags & BGFX_RESET_MAXANISOTROPY) )
 			{
@@ -1946,6 +1981,8 @@ data.NumQualityLevels = 0;
 
 				postReset();
 			}
+
+			return false;
 		}
 
 		void setShaderUniform(uint8_t _flags, uint32_t _regIndex, const void* _val, uint32_t _numRegs)
@@ -2831,7 +2868,6 @@ data.NumQualityLevels = 0;
 #endif // BX_PLATFORM_WINDOWS
 
 		int64_t m_presentElapsed;
-		uint16_t m_lost;
 		uint16_t m_numWindows;
 		FrameBufferHandle m_windows[BGFX_CONFIG_MAX_FRAME_BUFFERS];
 
@@ -2860,6 +2896,7 @@ data.NumQualityLevels = 0;
 
 		Resolution m_resolution;
 		bool m_wireframe;
+		bool m_lost;
 
 #if BX_PLATFORM_WINDOWS
 		DXGI_SWAP_CHAIN_DESC m_scd;
@@ -4779,7 +4816,11 @@ data.NumQualityLevels = 0;
 	{
 //		PIX_BEGINEVENT(D3DCOLOR_FRAME, L"rendererSubmit");
 
-		updateResolution(_render->m_resolution);
+		if (m_lost
+		||  updateResolution(_render->m_resolution) )
+		{
+			return;
+		}
 
 		int64_t elapsed = -bx::getHPCounter();
 		int64_t captureElapsed = 0;
@@ -4804,6 +4845,9 @@ data.NumQualityLevels = 0;
 		currentState.clear();
 		currentState.m_stateFlags = BGFX_STATE_NONE;
 		currentState.m_stencil    = packStencil(BGFX_STENCIL_NONE, BGFX_STENCIL_NONE);
+
+		RenderBind currentBind;
+		currentBind.clear();
 
 		_render->m_hmdInitialized = false;
 
@@ -4890,7 +4934,9 @@ data.NumQualityLevels = 0;
 					|| item == numItems
 					;
 
-				const RenderItem& renderItem = _render->m_renderItem[_render->m_sortValues[item] ];
+				const uint32_t itemIdx       = _render->m_sortValues[item];
+				const RenderItem& renderItem = _render->m_renderItem[itemIdx];
+				const RenderBind& renderBind = _render->m_renderItemBind[itemIdx];
 				++item;
 
 				if (viewChanged)
@@ -5043,7 +5089,7 @@ data.NumQualityLevels = 0;
 						currentBindHash = 0;
 					}
 
-					uint32_t bindHash = bx::hashMurmur2A(compute.m_bind, sizeof(compute.m_bind) );
+					uint32_t bindHash = bx::hashMurmur2A(renderBind.m_bind, sizeof(renderBind.m_bind) );
 					if (currentBindHash != bindHash)
 					{
 						currentBindHash  = bindHash;
@@ -5056,7 +5102,7 @@ data.NumQualityLevels = 0;
 
 							for (uint32_t ii = 0; ii < BGFX_MAX_COMPUTE_BINDINGS; ++ii)
 							{
-								const Binding& bind = compute.m_bind[ii];
+								const Binding& bind = renderBind.m_bind[ii];
 								if (invalidHandle != bind.m_idx)
 								{
 									switch (bind.m_type)
@@ -5243,6 +5289,8 @@ data.NumQualityLevels = 0;
 					currentState.m_stateFlags = newFlags;
 					currentState.m_stencil    = newStencil;
 
+					currentBind.clear();
+
 					const uint64_t pt = newFlags&BGFX_STATE_PT_MASK;
 					primIndex = uint8_t(pt>>BGFX_STATE_PT_SHIFT);
 				}
@@ -5271,7 +5319,7 @@ data.NumQualityLevels = 0;
 							);
 
 					uint16_t scissor = draw.m_scissor;
-					uint32_t bindHash = bx::hashMurmur2A(draw.m_bind, sizeof(draw.m_bind) );
+					uint32_t bindHash = bx::hashMurmur2A(renderBind.m_bind, sizeof(renderBind.m_bind) );
 					if (currentBindHash != bindHash
 					||  0 != changedStencil
 					|| (hasFactor && blendFactor != draw.m_rgba)
@@ -5297,17 +5345,47 @@ data.NumQualityLevels = 0;
 								srvHandle[0].ptr = 0;
 								for (uint32_t stage = 0; stage < BGFX_CONFIG_MAX_TEXTURE_SAMPLERS; ++stage)
 								{
-									const Binding& bind = draw.m_bind[stage];
+									const Binding& bind = renderBind.m_bind[stage];
 									if (invalidHandle != bind.m_idx)
 									{
-										TextureD3D12& texture = m_textures[bind.m_idx];
-										texture.setState(m_commandList, D3D12_RESOURCE_STATE_GENERIC_READ);
-										scratchBuffer.allocSrv(srvHandle[stage], texture);
-										samplerFlags[stage] = (0 == (BGFX_TEXTURE_INTERNAL_DEFAULT_SAMPLER & bind.m_un.m_draw.m_textureFlags)
-											? bind.m_un.m_draw.m_textureFlags
-											: texture.m_flags
-											) & (BGFX_TEXTURE_SAMPLER_BITS_MASK|BGFX_TEXTURE_BORDER_COLOR_MASK)
-											;
+										switch (bind.m_type)
+										{
+										case Binding::Texture:
+											{
+												TextureD3D12& texture = m_textures[bind.m_idx];
+												texture.setState(m_commandList, D3D12_RESOURCE_STATE_GENERIC_READ);
+												scratchBuffer.allocSrv(srvHandle[stage], texture);
+												samplerFlags[stage] = (0 == (BGFX_TEXTURE_INTERNAL_DEFAULT_SAMPLER & bind.m_un.m_draw.m_textureFlags)
+													? bind.m_un.m_draw.m_textureFlags
+													: texture.m_flags
+													) & (BGFX_TEXTURE_SAMPLER_BITS_MASK | BGFX_TEXTURE_BORDER_COLOR_MASK)
+													;
+											}
+											break;
+
+										case Binding::IndexBuffer:
+										case Binding::VertexBuffer:
+											{
+												BufferD3D12& buffer = Binding::IndexBuffer == bind.m_type
+													? m_indexBuffers[bind.m_idx]
+													: m_vertexBuffers[bind.m_idx]
+													;
+
+												if (Access::Read != bind.m_un.m_compute.m_access)
+												{
+													// The api functions prevent binding with Access::Write,
+													// but might as well allow it in here for future-proofing
+													buffer.setState(m_commandList, D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
+													scratchBuffer.allocUav(srvHandle[stage], buffer);
+												}
+												else
+												{
+													buffer.setState(m_commandList, D3D12_RESOURCE_STATE_GENERIC_READ);
+													scratchBuffer.allocSrv(srvHandle[stage], buffer);
+												}
+											}
+											break;
+										}
 									}
 									else
 									{
