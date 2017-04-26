@@ -287,7 +287,7 @@ namespace bgfx { namespace d3d11
 		{ DXGI_FORMAT_B4G4R4A4_UNORM,     DXGI_FORMAT_B4G4R4A4_UNORM,        DXGI_FORMAT_UNKNOWN,           DXGI_FORMAT_UNKNOWN             }, // RGBA4
 		{ DXGI_FORMAT_B5G5R5A1_UNORM,     DXGI_FORMAT_B5G5R5A1_UNORM,        DXGI_FORMAT_UNKNOWN,           DXGI_FORMAT_UNKNOWN             }, // RGB5A1
 		{ DXGI_FORMAT_R10G10B10A2_UNORM,  DXGI_FORMAT_R10G10B10A2_UNORM,     DXGI_FORMAT_UNKNOWN,           DXGI_FORMAT_UNKNOWN             }, // RGB10A2
-		{ DXGI_FORMAT_R11G11B10_FLOAT,    DXGI_FORMAT_R11G11B10_FLOAT,       DXGI_FORMAT_UNKNOWN,           DXGI_FORMAT_UNKNOWN             }, // R11G11B10F
+		{ DXGI_FORMAT_R11G11B10_FLOAT,    DXGI_FORMAT_R11G11B10_FLOAT,       DXGI_FORMAT_UNKNOWN,           DXGI_FORMAT_UNKNOWN             }, // RG11B10F
 		{ DXGI_FORMAT_UNKNOWN,            DXGI_FORMAT_UNKNOWN,               DXGI_FORMAT_UNKNOWN,           DXGI_FORMAT_UNKNOWN             }, // UnknownDepth
 		{ DXGI_FORMAT_R16_TYPELESS,       DXGI_FORMAT_R16_UNORM,             DXGI_FORMAT_D16_UNORM,         DXGI_FORMAT_UNKNOWN             }, // D16
 		{ DXGI_FORMAT_R24G8_TYPELESS,     DXGI_FORMAT_R24_UNORM_X8_TYPELESS, DXGI_FORMAT_D24_UNORM_S8_UINT, DXGI_FORMAT_UNKNOWN             }, // D24
@@ -974,7 +974,7 @@ namespace bgfx { namespace d3d11
 								}
 
 								if (BX_ENABLED(BGFX_CONFIG_DEBUG_PERFHUD)
-								&&  0 != bx::strnstr(description, "PerfHUD") )
+								&&  0 != bx::strFind(description, "PerfHUD") )
 								{
 									m_adapter = adapter;
 									m_driverType = D3D_DRIVER_TYPE_REFERENCE;
@@ -1293,8 +1293,19 @@ BX_PRAGMA_DIAGNOSTIC_POP();
 					{
 						D3D11_MESSAGE_CATEGORY_STATE_CREATION,
 					};
+
 					filter.DenyList.NumCategories = BX_COUNTOF(catlist);
 					filter.DenyList.pCategoryList = catlist;
+
+					D3D11_MESSAGE_ID idlist[] =
+					{
+						D3D11_MESSAGE_ID_DEVICE_DRAW_RENDERTARGETVIEW_NOT_SET,
+						D3D11_MESSAGE_ID_QUERY_BEGIN_ABANDONING_PREVIOUS_RESULTS,
+					};
+
+					filter.DenyList.NumIDs  = BX_COUNTOF(idlist);
+					filter.DenyList.pIDList = idlist;
+
 					m_infoQueue->PushStorageFilter(&filter);
 
 					DX_RELEASE(m_infoQueue, 3);
@@ -2088,9 +2099,9 @@ BX_PRAGMA_DIAGNOSTIC_POP();
 					);
 			}
 
-			bx::strlcpy(&s_viewName[_id][BGFX_CONFIG_MAX_VIEW_NAME_RESERVED]
-				, _name
+			bx::strCopy(&s_viewName[_id][BGFX_CONFIG_MAX_VIEW_NAME_RESERVED]
 				, BX_COUNTOF(s_viewName[0]) - BGFX_CONFIG_MAX_VIEW_NAME_RESERVED
+				, _name
 				);
 		}
 
@@ -2729,7 +2740,7 @@ BX_PRAGMA_DIAGNOSTIC_POP();
 					for (jj = 0; jj < num; ++jj)
 					{
 						curr = &vertexElements[jj];
-						if (0 == bx::strncmp(curr->SemanticName, "TEXCOORD")
+						if (0 == bx::strCmp(curr->SemanticName, "TEXCOORD")
 						&&  curr->SemanticIndex == index)
 						{
 							break;

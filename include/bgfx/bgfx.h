@@ -222,7 +222,7 @@ namespace bgfx
 			RGBA4,
 			RGB5A1,
 			RGB10A2,
-			R11G11B10F,
+			RG11B10F,
 
 			UnknownDepth, // Depth formats below.
 
@@ -2508,9 +2508,6 @@ namespace bgfx
 	///     mode.
 	///   - `BGFX_TEXTURE_[MIN/MAG/MIP]_[POINT/ANISOTROPIC]` - Point or anisotropic
 	///     sampling.
-	///
-	/// @param[in] _flags Texture sampler filtering flags. UINT32_MAX use the
-	///   sampler filtering mode set by texture.
 	///
 	/// @attention C99 equivalent is `bgfx_set_texture`.
 	///
