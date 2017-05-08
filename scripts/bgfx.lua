@@ -66,6 +66,10 @@ function bgfxProject(_name, _kind, _defines)
 				buildoptions {
 					"-fPIC",
 				}
+
+				links  {
+					"GL",
+				}
 			
 			configuration { "osx", "Debug" }
 				linkoptions {
