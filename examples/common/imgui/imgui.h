@@ -31,6 +31,17 @@
 #include <iconfontheaders/icons_kenney.h>
 #include <iconfontheaders/icons_font_awesome.h>
 
+#if defined(_MSC_VER)
+#   define BGFX_SHARED_LIB_API __declspec(dllexport)
+#else
+#   define BGFX_SHARED_LIB_API
+#endif
+
+
+#if defined(__cplusplus)
+#   define IMGUI_C_API extern "C" BGFX_SHARED_LIB_API
+#endif
+
 #define IMGUI_MBUT_LEFT   0x01
 #define IMGUI_MBUT_RIGHT  0x02
 #define IMGUI_MBUT_MIDDLE 0x04
@@ -138,8 +149,8 @@ ImguiFontHandle imguiGetCurrentFont();
 
 namespace bx { struct AllocatorI; }
 
-ImguiFontHandle imguiCreate(const void* _data = NULL, uint32_t _size = 0, float _fontSize = 18.0f, bx::AllocatorI* _allocator = NULL);
-void imguiDestroy();
+IMGUI_C_API ImguiFontHandle imguiCreate(const void* _data = NULL, uint32_t _size = 0, float _fontSize = 18.0f, bx::AllocatorI* _allocator = NULL);
+IMGUI_C_API void imguiDestroy();
 
 void imguiBeginFrame(int32_t _mx, int32_t _my, uint8_t _button, int32_t _scroll, uint16_t _width, uint16_t _height, char _inputChar = 0, uint8_t _view = 255);
 void imguiBeginFrame(int32_t _mx, int32_t _my, uint8_t _button, int32_t _scroll, uint16_t _width, uint16_t _height, uint16_t _surfaceWidth, uint16_t _surfaceHeight, char _inputChar = 0, uint8_t _view = 255);
