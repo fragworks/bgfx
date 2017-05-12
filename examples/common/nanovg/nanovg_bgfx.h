@@ -10,6 +10,17 @@
 
 namespace bx { struct AllocatorI; }
 
+#if defined(_MSC_VER)
+#   define BGFX_SHARED_LIB_API __declspec(dllexport)
+#else
+#   define BGFX_SHARED_LIB_API
+#endif
+
+
+#if defined(__cplusplus)
+#   define NANOVG_C_API extern "C" BGFX_SHARED_LIB_API
+#endif
+
 struct NVGcontext;
 
 struct NVGLUframebuffer {
@@ -21,8 +32,8 @@ struct NVGLUframebuffer {
 typedef struct NVGLUframebuffer NVGLUframebuffer;
 
 NVGcontext* nvgCreate(int edgeaa, unsigned char _viewId, bx::AllocatorI* _allocator);
-NVGcontext* nvgCreate(int edgeaa, unsigned char _viewId);
-void nvgDelete(struct NVGcontext* ctx);
+NANOVG_C_API NVGcontext* nvgCreate(int edgeaa, unsigned char _viewId);
+NANOVG_C_API void nvgDelete(struct NVGcontext* ctx);
 uint8_t nvgViewId(struct NVGcontext* ctx);
 void nvgViewId(struct NVGcontext* ctx, unsigned char _viewId);
 
