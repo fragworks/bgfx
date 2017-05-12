@@ -17,11 +17,16 @@ project ("example-common")
 	files {
 		path.join(BGFX_DIR, "3rdparty/ib-compress/**.cpp"),
 		path.join(BGFX_DIR, "3rdparty/ib-compress/**.h"),
-		path.join(BGFX_DIR, "3rdparty/ocornut-imgui/**.cpp"),
-		path.join(BGFX_DIR, "3rdparty/ocornut-imgui/**.h"),
 		path.join(BGFX_DIR, "examples/common/**.cpp"),
 		path.join(BGFX_DIR, "examples/common/**.cpp"),
 		path.join(BGFX_DIR, "examples/common/**.h"),
+	}
+
+	removefiles {
+		path.join(BGFX_DIR, "examples/common/imgui/**.cpp"),
+		path.join(BGFX_DIR, "examples/common/imgui/**.h"),
+		path.join(BGFX_DIR, "examples/common/nanovg/**.cpp"),
+		path.join(BGFX_DIR, "examples/common/nanovg/**.h"),
 	}
 
 	if _OPTIONS["with-scintilla"] then

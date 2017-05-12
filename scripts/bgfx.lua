@@ -193,12 +193,17 @@ function bgfxProject(_name, _kind, _defines)
 			path.join(BGFX_DIR, "include/**.h"),
 			path.join(BGFX_DIR, "src/**.cpp"),
 			path.join(BGFX_DIR, "src/**.h"),
+			path.join(BGFX_DIR, "3rdparty/ocornut-imgui/**.cpp"),
+			path.join(BGFX_DIR, "3rdparty/ocornut-imgui/**.h"),
+			path.join(BGFX_DIR, "examples/common/imgui/**.cpp"),
+			path.join(BGFX_DIR, "examples/common/imgui/**.h"),
 			path.join(BGFX_DIR, "examples/common/nanovg/**.cpp"),
 			path.join(BGFX_DIR, "examples/common/nanovg/**.h"),
 		}
 
 		removefiles {
 			path.join(BGFX_DIR, "src/**.bin.h"),
+			path.join(BGFX_DIR, "examples/common/imgui/**.bin.h"),
 			path.join(BGFX_DIR, "examples/common/nanovg/**.bin.h"),
 		}
 
