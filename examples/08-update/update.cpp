@@ -256,7 +256,7 @@ public:
 		if (m_computeSupported)
 		{
 			m_textureCube[2] = bgfx::createTextureCube(
-				textureside
+				  textureside
 				, false
 				, 1
 				, bgfx::TextureFormat::RGBA8
@@ -475,7 +475,7 @@ public:
 					bgfx::setTransform( mtx );
 
 					// Set vertex and index buffer.
-					bgfx::setVertexBuffer( m_vbh );
+					bgfx::setVertexBuffer(0,  m_vbh );
 					bgfx::setIndexBuffer( m_ibh );
 
 					// Bind texture.
@@ -502,7 +502,7 @@ public:
 			bgfx::setTransform(mtx);
 
 			// Set vertex and index buffer.
-			bgfx::setVertexBuffer(m_vbh);
+			bgfx::setVertexBuffer(0, m_vbh);
 			bgfx::setIndexBuffer(m_ibh);
 
 			// Bind texture.
@@ -524,7 +524,7 @@ public:
 				bgfx::setTransform(mtx);
 
 				// Set vertex and index buffer.
-				bgfx::setVertexBuffer(m_vbh);
+				bgfx::setVertexBuffer(0, m_vbh);
 				bgfx::setIndexBuffer(m_ibh, 0, 6);
 
 				// Bind texture.
@@ -545,7 +545,7 @@ public:
 				bgfx::setTransform(mtx);
 
 				// Set vertex and index buffer.
-				bgfx::setVertexBuffer(m_vbh);
+				bgfx::setVertexBuffer(0, m_vbh);
 				bgfx::setIndexBuffer(m_ibh, 0, 6);
 
 				// Bind texture.
@@ -566,7 +566,7 @@ public:
 				bgfx::setTransform(mtx);
 
 				// Set vertex and index buffer.
-				bgfx::setVertexBuffer(m_vbh, 24, 4);
+				bgfx::setVertexBuffer(0, m_vbh, 24, 4);
 				bgfx::setIndexBuffer(m_ibh, 0, 6);
 
 				// Bind texture.

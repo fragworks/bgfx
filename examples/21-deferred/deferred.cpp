@@ -183,7 +183,7 @@ void screenSpaceQuad(float _textureWidth, float _textureHeight, float _texelHalf
 		vertex[2].m_u = maxu;
 		vertex[2].m_v = maxv;
 
-		bgfx::setVertexBuffer(&vb);
+		bgfx::setVertexBuffer(0, &vb);
 	}
 }
 
@@ -430,29 +430,21 @@ class ExampleDeferred : public entry::AppI
 						, uint16_t(m_height)
 						);
 
-				imguiBeginScrollArea("Settings", m_width - m_width / 5 - 10, 10, m_width / 5, m_height / 3, &m_scrollArea);
-				imguiSeparatorLine();
+				ImGui::Begin("Deferred Rendering Settings"
+					, NULL
+					, ImVec2(m_width / 5.0f, m_height / 3.0f)
+					, ImGuiWindowFlags_AlwaysAutoResize
+					);
+				ImGui::SetWindowPos(ImVec2(m_width - m_width / 5.0f - 10.0f, 10.0f) );
 
-				imguiSlider("Num lights", m_numLights, 1, 2048);
+				ImGui::SliderInt("Num lights", &m_numLights, 1, 2048);
+				ImGui::Checkbox("Show G-Buffer.", &m_showGBuffer);
+				ImGui::Checkbox("Show light scissor.", &m_showScissorRects);
+				ImGui::Checkbox("Animate mesh.", &m_animateMesh);
+				ImGui::SliderFloat("Anim.speed", &m_lightAnimationSpeed, 0.0f, 0.4f);
 
-				if (imguiCheck("Show G-Buffer.", m_showGBuffer) )
-				{
-					m_showGBuffer = !m_showGBuffer;
-				}
+				ImGui::End();
 
-				if (imguiCheck("Show light scissor.", m_showScissorRects) )
-				{
-					m_showScissorRects = !m_showScissorRects;
-				}
-
-				if (imguiCheck("Animate mesh.", m_animateMesh) )
-				{
-					m_animateMesh = !m_animateMesh;
-				}
-
-				imguiSlider("Lights animation speed", m_lightAnimationSpeed, 0.0f, 0.4f, 0.01f);
-
-				imguiEndScrollArea();
 				imguiEndFrame();
 
 				// Update camera.
@@ -520,7 +512,7 @@ class ExampleDeferred : public entry::AppI
 						bgfx::setTransform(mtx);
 
 						// Set vertex and index buffer.
-						bgfx::setVertexBuffer(m_vbh);
+						bgfx::setVertexBuffer(0, m_vbh);
 						bgfx::setIndexBuffer(m_ibh);
 
 						// Bind textures.
@@ -635,7 +627,7 @@ class ExampleDeferred : public entry::AppI
 								*indices++ = 3;
 								*indices++ = 0;
 
-								bgfx::setVertexBuffer(&tvb);
+								bgfx::setVertexBuffer(0, &tvb);
 								bgfx::setIndexBuffer(&tib);
 								bgfx::setState(0
 										| BGFX_STATE_RGB_WRITE
@@ -698,7 +690,7 @@ class ExampleDeferred : public entry::AppI
 								);
 
 						bgfx::setTransform(mtx);
-						bgfx::setVertexBuffer(m_vbh);
+						bgfx::setVertexBuffer(0, m_vbh);
 						bgfx::setIndexBuffer(m_ibh, 0, 6);
 						bgfx::setTexture(0, s_texColor, m_gbufferTex[ii]);
 						bgfx::setState(BGFX_STATE_RGB_WRITE);

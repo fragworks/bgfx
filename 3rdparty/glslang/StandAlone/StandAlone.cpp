@@ -35,10 +35,13 @@
 //
 
 // this only applies to the standalone wrapper, not the front end in general
+#ifndef _CRT_SECURE_NO_WARNINGS
 #define _CRT_SECURE_NO_WARNINGS
+#endif
 
 #include "ResourceLimits.h"
 #include "Worklist.h"
+#include "DirStackFileIncluder.h"
 #include "./../glslang/Include/ShHandle.h"
 #include "./../glslang/Include/revision.h"
 #include "./../glslang/Public/ShaderLang.h"
@@ -46,6 +49,7 @@
 #include "../SPIRV/GLSL.std.450.h"
 #include "../SPIRV/doc.h"
 #include "../SPIRV/disassemble.h"
+
 #include <cstring>
 #include <cstdlib>
 #include <cctype>
@@ -88,6 +92,8 @@ enum TOptions {
     EOptionKeepUncalled         = (1 << 22),
     EOptionHlslOffsets          = (1 << 23),
     EOptionHlslIoMapping        = (1 << 24),
+    EOptionAutoMapLocations     = (1 << 25),
+    EOptionDebug                = (1 << 26),
 };
 
 //
@@ -168,6 +174,7 @@ std::array<unsigned int, EShLangCount> baseImageBinding;
 std::array<unsigned int, EShLangCount> baseUboBinding;
 std::array<unsigned int, EShLangCount> baseSsboBinding;
 std::array<unsigned int, EShLangCount> baseUavBinding;
+std::array<std::vector<std::string>, EShLangCount> baseResourceSetBinding;
 
 //
 // Create the default name for saving a binary if -o is not provided.
@@ -245,6 +252,45 @@ void ProcessBindingBase(int& argc, char**& argv, std::array<unsigned int, EShLan
     }
 }
 
+void ProcessResourceSetBindingBase(int& argc, char**& argv, std::array<std::vector<std::string>, EShLangCount>& base)
+{
+    if (argc < 2)
+        usage();
+
+    if (!isdigit(argv[1][0])) {
+        if (argc < 5) // this form needs one more argument
+            usage();
+
+        // Parse form: --argname stage base
+        const EShLanguage lang = FindLanguage(argv[1], false);
+
+        base[lang].push_back(argv[2]);
+        base[lang].push_back(argv[3]);
+        base[lang].push_back(argv[4]);
+        argc-= 4;
+        argv+= 4;
+        while(argv[1] != NULL) {
+            if(argv[1][0] != '-') {
+                base[lang].push_back(argv[1]);
+                base[lang].push_back(argv[2]);
+                base[lang].push_back(argv[3]);
+                argc-= 3;
+                argv+= 3;
+            }
+            else {
+                break;
+            }
+        }
+    } else {
+        // Parse form: --argname base
+        for (int lang=0; lang<EShLangCount; ++lang)
+            base[lang].push_back(argv[1]);
+
+        argc--;
+        argv++;
+    }
+}
+
 //
 // Do all command-line argument parsing.  This includes building up the work-items
 // to be processed later, and saving all the command-line options.
@@ -297,6 +343,10 @@ void ProcessArguments(std::vector<std::unique_ptr<glslang::TWorkItem>>& workItem
                                lowerword == "shift-ssbo-binding"  ||
                                lowerword == "sbb") {
                         ProcessBindingBase(argc, argv, baseSsboBinding);
+                    } else if (lowerword == "resource-set-bindings" ||  // synonyms
+                               lowerword == "resource-set-binding"  ||
+                               lowerword == "rsb") {
+                        ProcessResourceSetBindingBase(argc, argv, baseResourceSetBinding);
                     } else if (lowerword == "shift-uav-bindings" ||  // synonyms
                                lowerword == "shift-uav-binding"  ||
                                lowerword == "suavb") {
@@ -340,6 +390,9 @@ void ProcessArguments(std::vector<std::unique_ptr<glslang::TWorkItem>>& workItem
                                lowerword == "hlsl-iomapper" ||
                                lowerword == "hlsl-iomapping") {
                         Options |= EOptionHlslIoMapping;
+                    } else if (lowerword == "auto-map-locations" || // synonyms
+                               lowerword == "aml") {
+                        Options |= EOptionAutoMapLocations;
                     } else {
                         usage();
                     }
@@ -397,6 +450,9 @@ void ProcessArguments(std::vector<std::unique_ptr<glslang::TWorkItem>>& workItem
                     argv++;
                 } else
                     Error("no <entry-point> provided for -e");
+                break;
+            case 'g':
+                Options |= EOptionDebug;
                 break;
             case 'h':
                 usage();
@@ -489,6 +545,8 @@ void SetMessageOptions(EShMessages& messages)
         messages = (EShMessages)(messages | EShMsgKeepUncalled);
     if (Options & EOptionHlslOffsets)
         messages = (EShMessages)(messages | EShMsgHlslOffsets);
+    if (Options & EOptionDebug)
+        messages = (EShMessages)(messages | EShMsgDebugInfo);
 }
 
 //
@@ -594,6 +652,7 @@ void CompileAndLinkShaderUnits(std::vector<ShaderCompUnit> compUnits)
         shader->setShiftUavBinding(baseUavBinding[compUnit.stage]);
         shader->setFlattenUniformArrays((Options & EOptionFlattenUniformArrays) != 0);
         shader->setNoStorageFormat((Options & EOptionNoStorageFormat) != 0);
+        shader->setResourceSetBinding(baseResourceSetBinding[compUnit.stage]);
 
         if (Options & EOptionHlslIoMapping)
             shader->setHlslIoMapping(true);
@@ -601,13 +660,16 @@ void CompileAndLinkShaderUnits(std::vector<ShaderCompUnit> compUnits)
         if (Options & EOptionAutoMapBindings)
             shader->setAutoMapBindings(true);
 
+        if (Options & EOptionAutoMapLocations)
+            shader->setAutoMapLocations(true);
+
         shaders.push_back(shader);
 
         const int defaultVersion = Options & EOptionDefaultDesktop? 110: 100;
 
+        DirStackFileIncluder includer;
         if (Options & EOptionOutputPreprocessed) {
             std::string str;
-            glslang::TShader::ForbidIncluder includer;
             if (shader->preprocess(&Resources, defaultVersion, ENoProfile, false, false,
                                    messages, &str, includer)) {
                 PutsIfNonEmpty(str.c_str());
@@ -618,7 +680,7 @@ void CompileAndLinkShaderUnits(std::vector<ShaderCompUnit> compUnits)
             StderrIfNonEmpty(shader->getInfoDebugLog());
             continue;
         }
-        if (! shader->parse(&Resources, defaultVersion, false, messages))
+        if (! shader->parse(&Resources, defaultVersion, false, messages, includer))
             CompileFailed = true;
 
         program.addShader(shader);
@@ -668,7 +730,10 @@ void CompileAndLinkShaderUnits(std::vector<ShaderCompUnit> compUnits)
                     std::vector<unsigned int> spirv;
                     std::string warningsErrors;
                     spv::SpvBuildLogger logger;
-                    glslang::GlslangToSpv(*program.getIntermediate((EShLanguage)stage), spirv, &logger);
+                    glslang::SpvOptions spvOptions;
+                    if (Options & EOptionDebug)
+                        spvOptions.generateDebugInfo = true;
+                    glslang::GlslangToSpv(*program.getIntermediate((EShLanguage)stage), spirv, &logger, &spvOptions);
 
                     // Dump the spv to a file or stdout, etc., but only if not doing
                     // memory/perf testing, as it's not internal to programmatic use.
@@ -977,6 +1042,7 @@ void usage()
            "              (default is ES version 100)\n"
            "  -D          input is HLSL\n"
            "  -e          specify entry-point name\n"
+           "  -g          generate debug information\n"
            "  -h          print this usage message\n"
            "  -i          intermediate tree (glslang AST) is printed out\n"
            "  -l          link all input files together to form a single module\n"
@@ -1006,12 +1072,20 @@ void usage()
            "  --shift-ssbo-binding [stage] num        set base binding number for SSBOs\n"
            "  --sbb [stage] num                       synonym for --shift-ssbo-binding\n"
            "\n"
+           "  --resource-set-binding [stage] num      set descriptor set and binding number for resources\n"
+           "  --rsb [stage] type set binding          synonym for --resource-set-binding\n"
+           "\n"
            "  --shift-uav-binding [stage] num         set base binding number for UAVs\n"
            "  --suavb [stage] num                     synonym for --shift-uav-binding\n"
            "\n"
            "  --auto-map-bindings                     automatically bind uniform variables without\n"
            "                                          explicit bindings.\n"
            "  --amb                                   synonym for --auto-map-bindings\n"
+           "\n"
+           "  --auto-map-locations                    automatically locate input/output lacking 'location'\n"
+           "                                          (fragile, not cross stage: recommend explicit\n"
+           "                                          'location' use in shader)\n"
+           "  --aml                                   synonym for --auto-map-locations\n"
            "\n"
            "  --flatten-uniform-arrays                flatten uniform texture & sampler arrays to scalars\n"
            "  --fua                                   synonym for --flatten-uniform-arrays\n"

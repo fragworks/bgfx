@@ -1958,7 +1958,6 @@ namespace bgfx
 					 ||  BX_PLATFORM_ANDROID
 					 ||  BX_PLATFORM_EMSCRIPTEN
 					 ||  BX_PLATFORM_IOS
-					 ||  BX_PLATFORM_NACL
 					 ||  BX_PLATFORM_RPI
 					 ) )
 				{
@@ -2613,7 +2612,7 @@ namespace bgfx
 		}
 
 		if (true
-		&&  !BX_ENABLED(BX_PLATFORM_EMSCRIPTEN || BX_PLATFORM_NACL || BX_PLATFORM_PS4)
+		&&  !BX_ENABLED(BX_PLATFORM_EMSCRIPTEN || BX_PLATFORM_PS4)
 		&&  RendererType::Noop != _type
 		&&  NULL == g_platformData.ndt
 		&&  NULL == g_platformData.nwh
@@ -2636,7 +2635,7 @@ namespace bgfx
 		g_caps.limits.maxTextures             = BGFX_CONFIG_MAX_TEXTURES;
 		g_caps.limits.maxTextureSamplers      = BGFX_CONFIG_MAX_TEXTURE_SAMPLERS;
 		g_caps.limits.maxVertexDecls          = BGFX_CONFIG_MAX_VERTEX_DECLS;
-		g_caps.limits.maxVertexStreams        = BGFX_CONFIG_MAX_VERTEX_STREAMS;
+		g_caps.limits.maxVertexStreams        = 1;
 		g_caps.limits.maxIndexBuffers         = BGFX_CONFIG_MAX_INDEX_BUFFERS;
 		g_caps.limits.maxVertexBuffers        = BGFX_CONFIG_MAX_VERTEX_BUFFERS;
 		g_caps.limits.maxDynamicIndexBuffers  = BGFX_CONFIG_MAX_DYNAMIC_INDEX_BUFFERS;
@@ -3454,6 +3453,7 @@ error:
 	FrameBufferHandle createFrameBuffer(void* _nwh, uint16_t _width, uint16_t _height, TextureFormat::Enum _depthFormat)
 	{
 		BGFX_CHECK_MAIN_THREAD();
+		BGFX_CHECK_CAPS(BGFX_CAPS_SWAP_CHAIN, "Swap chain is not supported!");
 		BX_WARN(_width > 0 && _height > 0
 			, "Invalid frame buffer dimensions (width %d, height %d)."
 			, _width
@@ -3741,14 +3741,9 @@ error:
 		s_ctx->setVertexBuffer(_stream, _handle, _startVertex, _numVertices);
 	}
 
-	void setVertexBuffer(VertexBufferHandle _handle)
+	void setVertexBuffer(uint8_t _stream, VertexBufferHandle _handle)
 	{
-		setVertexBuffer(0, _handle, 0, UINT32_MAX);
-	}
-
-	void setVertexBuffer(VertexBufferHandle _handle, uint32_t _startVertex, uint32_t _numVertices)
-	{
-		setVertexBuffer(0, _handle, _startVertex, _numVertices);
+		setVertexBuffer(_stream, _handle, 0, UINT32_MAX);
 	}
 
 	void setVertexBuffer(uint8_t _stream, DynamicVertexBufferHandle _handle, uint32_t _startVertex, uint32_t _numVertices)
@@ -3757,14 +3752,9 @@ error:
 		s_ctx->setVertexBuffer(_stream, _handle, _startVertex, _numVertices);
 	}
 
-	void setVertexBuffer(DynamicVertexBufferHandle _handle)
+	void setVertexBuffer(uint8_t _stream, DynamicVertexBufferHandle _handle)
 	{
-		setVertexBuffer(0, _handle, 0, UINT32_MAX);
-	}
-
-	void setVertexBuffer(DynamicVertexBufferHandle _handle, uint32_t _startVertex, uint32_t _numVertices)
-	{
-		setVertexBuffer(0, _handle, _startVertex, _numVertices);
+		setVertexBuffer(_stream, _handle, 0, UINT32_MAX);
 	}
 
 	void setVertexBuffer(uint8_t _stream, const TransientVertexBuffer* _tvb, uint32_t _startVertex, uint32_t _numVertices)
@@ -3774,14 +3764,9 @@ error:
 		s_ctx->setVertexBuffer(_stream, _tvb, _startVertex, _numVertices);
 	}
 
-	void setVertexBuffer(const TransientVertexBuffer* _tvb)
+	void setVertexBuffer(uint8_t _stream, const TransientVertexBuffer* _tvb)
 	{
-		setVertexBuffer(0, _tvb, 0, UINT32_MAX);
-	}
-
-	void setVertexBuffer(const TransientVertexBuffer* _tvb, uint32_t _startVertex, uint32_t _numVertices)
-	{
-		setVertexBuffer(0, _tvb, _startVertex, _numVertices);
+		setVertexBuffer(_stream, _tvb, 0, UINT32_MAX);
 	}
 
 	void setInstanceDataBuffer(const InstanceDataBuffer* _idb, uint32_t _num)
@@ -3836,7 +3821,7 @@ error:
 	uint32_t submit(uint8_t _id, ProgramHandle _program, IndirectBufferHandle _indirectHandle, uint16_t _start, uint16_t _num, int32_t _depth, bool _preserveState)
 	{
 		BGFX_CHECK_MAIN_THREAD();
-		BGFX_CHECK_CAPS(BGFX_CAPS_DRAW_INDIRECT, "Draw indirect is not supported! Use bgfx::getCaps to check BGFX_CAPS_DRAW_INDIRECT backend renderer capabilities.");
+		BGFX_CHECK_CAPS(BGFX_CAPS_DRAW_INDIRECT, "Draw indirect is not supported!");
 		return s_ctx->submit(_id, _program, _indirectHandle, _start, _num, _depth, _preserveState);
 	}
 
@@ -3885,15 +3870,15 @@ error:
 	uint32_t dispatch(uint8_t _id, ProgramHandle _handle, uint16_t _numX, uint16_t _numY, uint16_t _numZ, uint8_t _flags)
 	{
 		BGFX_CHECK_MAIN_THREAD();
-		BGFX_CHECK_CAPS(BGFX_CAPS_COMPUTE, "Compute is not supported! Use bgfx::getCaps to check BGFX_CAPS_COMPUTE backend renderer capabilities.");
+		BGFX_CHECK_CAPS(BGFX_CAPS_COMPUTE, "Compute is not supported!");
 		return s_ctx->dispatch(_id, _handle, _numX, _numY, _numZ, _flags);
 	}
 
 	uint32_t dispatch(uint8_t _id, ProgramHandle _handle, IndirectBufferHandle _indirectHandle, uint16_t _start, uint16_t _num, uint8_t _flags)
 	{
 		BGFX_CHECK_MAIN_THREAD();
-		BGFX_CHECK_CAPS(BGFX_CAPS_DRAW_INDIRECT, "Dispatch indirect is not supported! Use bgfx::getCaps to check BGFX_CAPS_DRAW_INDIRECT backend renderer capabilities.");
-		BGFX_CHECK_CAPS(BGFX_CAPS_COMPUTE, "Compute is not supported! Use bgfx::getCaps to check BGFX_CAPS_COMPUTE backend renderer capabilities.");
+		BGFX_CHECK_CAPS(BGFX_CAPS_DRAW_INDIRECT, "Dispatch indirect is not supported!");
+		BGFX_CHECK_CAPS(BGFX_CAPS_COMPUTE, "Compute is not supported!");
 		return s_ctx->dispatch(_id, _handle, _indirectHandle, _start, _num, _flags);
 	}
 
@@ -4805,21 +4790,21 @@ BGFX_C_API void bgfx_set_transient_index_buffer(const bgfx_transient_index_buffe
 	bgfx::setIndexBuffer( (const bgfx::TransientIndexBuffer*)_tib, _firstIndex, _numIndices);
 }
 
-BGFX_C_API void bgfx_set_vertex_buffer(bgfx_vertex_buffer_handle_t _handle, uint32_t _startVertex, uint32_t _numVertices)
+BGFX_C_API void bgfx_set_vertex_buffer(uint8_t _stream, bgfx_vertex_buffer_handle_t _handle, uint32_t _startVertex, uint32_t _numVertices)
 {
 	union { bgfx_vertex_buffer_handle_t c; bgfx::VertexBufferHandle cpp; } handle = { _handle };
-	bgfx::setVertexBuffer(handle.cpp, _startVertex, _numVertices);
+	bgfx::setVertexBuffer(_stream, handle.cpp, _startVertex, _numVertices);
 }
 
-BGFX_C_API void bgfx_set_dynamic_vertex_buffer(bgfx_dynamic_vertex_buffer_handle_t _handle, uint32_t _startVertex, uint32_t _numVertices)
+BGFX_C_API void bgfx_set_dynamic_vertex_buffer(uint8_t _stream, bgfx_dynamic_vertex_buffer_handle_t _handle, uint32_t _startVertex, uint32_t _numVertices)
 {
 	union { bgfx_dynamic_vertex_buffer_handle_t c; bgfx::DynamicVertexBufferHandle cpp; } handle = { _handle };
-	bgfx::setVertexBuffer(handle.cpp, _startVertex, _numVertices);
+	bgfx::setVertexBuffer(_stream, handle.cpp, _startVertex, _numVertices);
 }
 
-BGFX_C_API void bgfx_set_transient_vertex_buffer(const bgfx_transient_vertex_buffer_t* _tvb, uint32_t _startVertex, uint32_t _numVertices)
+BGFX_C_API void bgfx_set_transient_vertex_buffer(uint8_t _stream, const bgfx_transient_vertex_buffer_t* _tvb, uint32_t _startVertex, uint32_t _numVertices)
 {
-	bgfx::setVertexBuffer( (const bgfx::TransientVertexBuffer*)_tvb, _startVertex, _numVertices);
+	bgfx::setVertexBuffer(_stream, (const bgfx::TransientVertexBuffer*)_tvb, _startVertex, _numVertices);
 }
 
 BGFX_C_API void bgfx_set_instance_data_buffer(const bgfx_instance_data_buffer_t* _idb, uint32_t _num)

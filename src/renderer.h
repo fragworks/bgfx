@@ -107,11 +107,11 @@ namespace bgfx
 		}
 
 		template<uint16_t mtxRegs, typename RendererContext, typename Program, typename Draw>
-		void setPredefined(RendererContext* _renderer, uint16_t _view, uint8_t _eye, Program& _program, const Frame* _frame, const Draw& _draw)
+		void setPredefined(RendererContext* _renderer, uint16_t _view, uint8_t _eye, const Program& _program, const Frame* _frame, const Draw& _draw)
 		{
 			for (uint32_t ii = 0, num = _program.m_numPredefined; ii < num; ++ii)
 			{
-				PredefinedUniform& predefined = _program.m_predefined[ii];
+				const PredefinedUniform& predefined = _program.m_predefined[ii];
 				uint8_t flags = predefined.m_type&BGFX_UNIFORM_FRAGMENTBIT;
 				switch (predefined.m_type&(~BGFX_UNIFORM_FRAGMENTBIT) )
 				{
@@ -466,6 +466,34 @@ namespace bgfx
 		typedef stl::unordered_map<uint64_t, uint16_t> HashMap;
 		HashMap m_hashMap;
 	};
+
+	inline bool hasVertexStreamChanged(const RenderDraw& _current, const RenderDraw& _new)
+	{
+		if (_current.m_streamMask             != _new.m_streamMask
+		||  _current.m_instanceDataBuffer.idx != _new.m_instanceDataBuffer.idx
+		||  _current.m_instanceDataOffset     != _new.m_instanceDataOffset
+		||  _current.m_instanceDataStride     != _new.m_instanceDataStride)
+		{
+			return true;
+		}
+
+		for (uint32_t idx = 0, streamMask = _new.m_streamMask, ntz = bx::uint32_cnttz(streamMask)
+			; 0 != streamMask
+			; streamMask >>= 1, idx += 1, ntz = bx::uint32_cnttz(streamMask)
+			)
+		{
+			streamMask >>= ntz;
+			idx         += ntz;
+
+			if (_current.m_stream[idx].m_handle.idx  != _new.m_stream[idx].m_handle.idx
+			||  _current.m_stream[idx].m_startVertex != _new.m_stream[idx].m_startVertex)
+			{
+				return true;
+			}
+		}
+
+		return false;
+	}
 
 } // namespace bgfx
 

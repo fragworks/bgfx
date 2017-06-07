@@ -17,7 +17,7 @@ extern "C"
 #define BGFX_CHUNK_MAGIC_VSH BX_MAKEFOURCC('V', 'S', 'H', 0x4)
 
 #define BGFX_SHADERC_VERSION_MAJOR 1
-#define BGFX_SHADERC_VERSION_MINOR 0
+#define BGFX_SHADERC_VERSION_MINOR 3
 
 namespace bgfx
 {
@@ -343,7 +343,7 @@ namespace bgfx
 				&&  m_data[1] == '\xbb'
 				&&  m_data[2] == '\xbf')
 				{
-					memmove(m_data, &m_data[3], m_size-3);
+					bx::memMove(m_data, &m_data[3], m_size-3);
 					m_size -= 3;
 				}
 
@@ -408,15 +408,22 @@ namespace bgfx
 	{
 		fprintf(stderr, "Code:\n---\n");
 
-		LineReader lr(_code);
-		for (int32_t line = 1; !lr.isEof() && line < _end; ++line)
+		bx::Error err;
+		LineReader reader(_code);
+		for (int32_t line = 1; err.isOk() && line < _end; ++line)
 		{
-			if (line >= _start)
+			char str[4096];
+			int32_t len = bx::read(&reader, str, BX_COUNTOF(str), &err);
+
+			if (err.isOk()
+			&&  line >= _start)
 			{
+				std::string strLine(str, len);
+
 				if (_line == line)
 				{
 					fprintf(stderr, "\n");
-					fprintf(stderr, ">>> %3d: %s", line, lr.getLine().c_str() );
+					fprintf(stderr, ">>> %3d: %s", line, strLine.c_str() );
 					if (-1 != _column)
 					{
 						fprintf(stderr, ">>> %3d: %*s\n", _column, _column, "^");
@@ -425,12 +432,8 @@ namespace bgfx
 				}
 				else
 				{
-					fprintf(stderr, "    %3d: %s", line, lr.getLine().c_str() );
+					fprintf(stderr, "    %3d: %s", line, strLine.c_str() );
 				}
-			}
-			else
-			{
-				lr.skipLine();
 			}
 		}
 
@@ -619,7 +622,7 @@ namespace bgfx
 		char* scratch(const char* _str)
 		{
 			char* result = &m_scratch[m_scratchPos];
-			strcpy(result, _str);
+			bx::strCopy(result, uint32_t(sizeof(m_scratch)-m_scratchPos), _str);
 			m_scratchPos += (uint32_t)bx::strLen(_str)+1;
 
 			return result;
@@ -952,7 +955,6 @@ namespace bgfx
 		preprocessor.setDefaultDefine("BX_PLATFORM_EMSCRIPTEN");
 		preprocessor.setDefaultDefine("BX_PLATFORM_IOS");
 		preprocessor.setDefaultDefine("BX_PLATFORM_LINUX");
-		preprocessor.setDefaultDefine("BX_PLATFORM_NACL");
 		preprocessor.setDefaultDefine("BX_PLATFORM_OSX");
 		preprocessor.setDefaultDefine("BX_PLATFORM_PS4");
 		preprocessor.setDefaultDefine("BX_PLATFORM_WINDOWS");
@@ -1002,11 +1004,6 @@ namespace bgfx
 			{
 				preprocessor.setDefine(glslDefine);
 			}
-		}
-		else if (0 == bx::strCmpI(platform, "nacl") )
-		{
-			preprocessor.setDefine("BX_PLATFORM_NACL=1");
-			preprocessor.setDefine("BGFX_SHADER_LANGUAGE_GLSL=1");
 		}
 		else if (0 == bx::strCmpI(platform, "osx") )
 		{
@@ -1179,14 +1176,14 @@ namespace bgfx
 				&&  data[1] == '\xbb'
 				&&  data[2] == '\xbf')
 				{
-					memmove(data, &data[3], size-3);
+					bx::memMove(data, &data[3], size-3);
 					size -= 3;
 				}
 
 				// Compiler generates "error X3000: syntax error: unexpected end of file"
 				// if input doesn't have empty line at EOF.
 				data[size] = '\n';
-				memset(&data[size+1], 0, padding);
+				bx::memSet(&data[size+1], 0, padding);
 				bx::close(&reader);
 
 				if (!raw)
@@ -1199,8 +1196,8 @@ namespace bgfx
 
 					size = (uint32_t)preprocessor.m_preprocessed.size();
 					data = new char[size+padding+1];
-					memcpy(data, preprocessor.m_preprocessed.c_str(), size);
-					memset(&data[size], 0, padding+1);
+					bx::memCopy(data, preprocessor.m_preprocessed.c_str(), size);
+					bx::memSet(&data[size], 0, padding+1);
 				}
 
 				strNormalizeEol(data);
@@ -1920,210 +1917,231 @@ namespace bgfx
 							{
 								std::string code;
 
-								const bool usesTextureLod   = false
-									|| !!bx::findIdentifierMatch(input, s_ARB_shader_texture_lod)
-									|| !!bx::findIdentifierMatch(input, s_EXT_shader_texture_lod)
-									;
-								const bool usesInstanceID   = !!bx::strFind(input, "gl_InstanceID");
-								const bool usesGpuShader4   = !!bx::findIdentifierMatch(input, s_EXT_gpu_shader4);
-								const bool usesGpuShader5   = !!bx::findIdentifierMatch(input, s_ARB_gpu_shader5);
-								const bool usesTexelFetch   = !!bx::findIdentifierMatch(input, s_texelFetch);
-								const bool usesTextureMS    = !!bx::findIdentifierMatch(input, s_ARB_texture_multisample);
-								const bool usesTextureArray = !!bx::findIdentifierMatch(input, s_textureArray);
-								const bool usesPacking      = !!bx::findIdentifierMatch(input, s_ARB_shading_language_packing);
-
-								if (0 == essl)
+								if (glsl < 400)
 								{
-									const bool need130 = 120 == glsl && (false
-										|| bx::findIdentifierMatch(input, s_130)
-										|| usesTexelFetch
-										);
+									const bool usesTextureLod   = false
+										|| !!bx::findIdentifierMatch(input, s_ARB_shader_texture_lod)
+										|| !!bx::findIdentifierMatch(input, s_EXT_shader_texture_lod)
+										;
+									const bool usesInstanceID   = !!bx::strFind(input, "gl_InstanceID");
+									const bool usesGpuShader4   = !!bx::findIdentifierMatch(input, s_EXT_gpu_shader4);
+									const bool usesGpuShader5   = !!bx::findIdentifierMatch(input, s_ARB_gpu_shader5);
+									const bool usesTexelFetch   = !!bx::findIdentifierMatch(input, s_texelFetch);
+									const bool usesTextureMS    = !!bx::findIdentifierMatch(input, s_ARB_texture_multisample);
+									const bool usesTextureArray = !!bx::findIdentifierMatch(input, s_textureArray);
+									const bool usesPacking      = !!bx::findIdentifierMatch(input, s_ARB_shading_language_packing);
 
-									if (0 != metal)
+									if (0 == essl)
 									{
-										bx::stringPrintf(code, "#version 120\n");
-									}
-									else
-									{
-										bx::stringPrintf(code, "#version %s\n", need130 ? "130" : profile);
-										glsl = 130;
-									}
-
-									if (usesInstanceID)
-									{
-										bx::stringPrintf(code
-											, "#extension GL_ARB_draw_instanced : enable\n"
+										const bool need130 = 120 == glsl && (false
+											|| bx::findIdentifierMatch(input, s_130)
+											|| usesTexelFetch
 											);
-									}
 
-									if (usesGpuShader4)
-									{
-										bx::stringPrintf(code
-											, "#extension GL_EXT_gpu_shader4 : enable\n"
-											);
-									}
-
-									if (usesGpuShader5)
-									{
-										bx::stringPrintf(code
-											, "#extension GL_ARB_gpu_shader5 : enable\n"
-											);
-									}
-
-									if (usesPacking)
-									{
-										bx::stringPrintf(code
-											, "#extension GL_ARB_shading_language_packing : enable\n"
-											);
-									}
-
-									bool ARB_shader_texture_lod = false;
-									bool EXT_shader_texture_lod = false;
-
-									if (usesTextureLod)
-									{
-										if ('f' == shaderType)
+										if (0 != metal)
 										{
-											ARB_shader_texture_lod = true;
-											bx::stringPrintf(code
-												, "#extension GL_ARB_shader_texture_lod : enable\n"
-												);
+											bx::stringPrintf(code, "#version 120\n");
 										}
 										else
 										{
-											EXT_shader_texture_lod = true;
+											bx::stringPrintf(code, "#version %s\n", need130 ? "130" : profile);
+											glsl = 130;
+										}
+
+										if (usesInstanceID)
+										{
 											bx::stringPrintf(code
-												, "#extension GL_EXT_shader_texture_lod : enable\n"
+												, "#extension GL_ARB_draw_instanced : enable\n"
 												);
 										}
-									}
 
-									if (usesTextureMS)
-									{
+										if (usesGpuShader4)
+										{
+											bx::stringPrintf(code
+												, "#extension GL_EXT_gpu_shader4 : enable\n"
+												);
+										}
+
+										if (usesGpuShader5)
+										{
+											bx::stringPrintf(code
+												, "#extension GL_ARB_gpu_shader5 : enable\n"
+												);
+										}
+
+										if (usesPacking)
+										{
+											bx::stringPrintf(code
+												, "#extension GL_ARB_shading_language_packing : enable\n"
+												);
+										}
+
+										bool ARB_shader_texture_lod = false;
+										bool EXT_shader_texture_lod = false;
+
+										if (usesTextureLod)
+										{
+											if ('f' == shaderType)
+											{
+												ARB_shader_texture_lod = true;
+												bx::stringPrintf(code
+													, "#extension GL_ARB_shader_texture_lod : enable\n"
+													);
+											}
+											else
+											{
+												EXT_shader_texture_lod = true;
+												bx::stringPrintf(code
+													, "#extension GL_EXT_shader_texture_lod : enable\n"
+													);
+											}
+										}
+
+										if (usesTextureMS)
+										{
+											bx::stringPrintf(code
+												, "#extension GL_ARB_texture_multisample : enable\n"
+												);
+										}
+
+										if (usesTextureArray)
+										{
+											bx::stringPrintf(code
+												, "#extension GL_EXT_texture_array : enable\n"
+												);
+										}
+
+										if (130 > glsl)
+										{
+											bx::stringPrintf(code,
+												"#define ivec2 vec2\n"
+												"#define ivec3 vec3\n"
+												"#define ivec4 vec4\n"
+												);
+										}
+
+										if (ARB_shader_texture_lod)
+										{
+											bx::stringPrintf(code,
+												"#define texture2DProjLod  texture2DProjLodARB\n"
+												"#define texture2DGrad     texture2DGradARB\n"
+												"#define texture2DProjGrad texture2DProjGradARB\n"
+												"#define textureCubeGrad   textureCubeGradARB\n"
+												);
+										}
+										else if (EXT_shader_texture_lod)
+										{
+											bx::stringPrintf(code,
+												"#define texture2DProjLod  texture2DProjLodEXT\n"
+												"#define texture2DGrad     texture2DGradEXT\n"
+												"#define texture2DProjGrad texture2DProjGradEXT\n"
+												"#define textureCubeGrad   textureCubeGradEXT\n"
+												);
+										}
+
 										bx::stringPrintf(code
-											, "#extension GL_ARB_texture_multisample : enable\n"
+											, "#define bgfxShadow2D shadow2D\n"
+											  "#define bgfxShadow2DProj shadow2DProj\n"
 											);
 									}
-
-									if (usesTextureArray)
+									else
 									{
-										bx::stringPrintf(code
-											, "#extension GL_EXT_texture_array : enable\n"
-											);
-									}
+										// Pretend that all extensions are available.
+										// This will be stripped later.
+										if (usesTextureLod)
+										{
+											bx::stringPrintf(code
+												, "#extension GL_EXT_shader_texture_lod : enable\n"
+												  "#define texture2DLod      texture2DLodEXT\n"
+												  "#define texture2DGrad     texture2DGradEXT\n"
+												  "#define texture2DProjLod  texture2DProjLodEXT\n"
+												  "#define texture2DProjGrad texture2DProjGradEXT\n"
+												  "#define textureCubeLod    textureCubeLodEXT\n"
+												  "#define textureCubeGrad   textureCubeGradEXT\n"
+												);
+										}
 
-									if (130 > glsl)
-									{
+										if (NULL != bx::findIdentifierMatch(input, s_OES_standard_derivatives) )
+										{
+											bx::stringPrintf(code, "#extension GL_OES_standard_derivatives : enable\n");
+										}
+
+										if (NULL != bx::findIdentifierMatch(input, s_OES_texture_3D) )
+										{
+											bx::stringPrintf(code, "#extension GL_OES_texture_3D : enable\n");
+										}
+
+										if (NULL != bx::findIdentifierMatch(input, s_EXT_shadow_samplers) )
+										{
+											bx::stringPrintf(code
+												, "#extension GL_EXT_shadow_samplers : enable\n"
+												  "#define shadow2D shadow2DEXT\n"
+												  "#define shadow2DProj shadow2DProjEXT\n"
+												);
+										}
+
+										if (usesGpuShader5)
+										{
+											bx::stringPrintf(code
+												, "#extension GL_ARB_gpu_shader5 : enable\n"
+												);
+										}
+
+										if (usesPacking)
+										{
+											bx::stringPrintf(code
+												, "#extension GL_ARB_shading_language_packing : enable\n"
+												);
+										}
+
+										if (NULL != bx::findIdentifierMatch(input, "gl_FragDepth") )
+										{
+											bx::stringPrintf(code
+												, "#extension GL_EXT_frag_depth : enable\n"
+												  "#define gl_FragDepth gl_FragDepthEXT\n"
+												);
+										}
+
+										if (usesTextureArray)
+										{
+											bx::stringPrintf(code
+												, "#extension GL_EXT_texture_array : enable\n"
+												);
+										}
+
 										bx::stringPrintf(code,
-											"#define ivec2 vec2\n"
-											"#define ivec3 vec3\n"
-											"#define ivec4 vec4\n"
-											);
+												"#define ivec2 vec2\n"
+												"#define ivec3 vec3\n"
+												"#define ivec4 vec4\n"
+												);
 									}
-
-									if (ARB_shader_texture_lod)
-									{
-										bx::stringPrintf(code,
-											"#define texture2DProjLod  texture2DProjLodARB\n"
-											"#define texture2DGrad     texture2DGradARB\n"
-											"#define texture2DProjGrad texture2DProjGradARB\n"
-											"#define textureCubeGrad   textureCubeGradARB\n"
-											);
-									}
-									else if (EXT_shader_texture_lod)
-									{
-										bx::stringPrintf(code,
-											"#define texture2DProjLod  texture2DProjLodEXT\n"
-											"#define texture2DGrad     texture2DGradEXT\n"
-											"#define texture2DProjGrad texture2DProjGradEXT\n"
-											"#define textureCubeGrad   textureCubeGradEXT\n"
-											);
-									}
-
-									bx::stringPrintf(code
-										, "#define bgfxShadow2D shadow2D\n"
-										  "#define bgfxShadow2DProj shadow2DProj\n"
-										);
 								}
 								else
 								{
-									// Pretend that all extensions are available.
-									// This will be stripped later.
-									if (usesTextureLod)
-									{
-										bx::stringPrintf(code
-											, "#extension GL_EXT_shader_texture_lod : enable\n"
-											  "#define texture2DLod      texture2DLodEXT\n"
-											  "#define texture2DGrad     texture2DGradEXT\n"
-											  "#define texture2DProjLod  texture2DProjLodEXT\n"
-											  "#define texture2DProjGrad texture2DProjGradEXT\n"
-											  "#define textureCubeLod    textureCubeLodEXT\n"
-											  "#define textureCubeGrad   textureCubeGradEXT\n"
-											);
-									}
-
-									if (NULL != bx::findIdentifierMatch(input, s_OES_standard_derivatives) )
-									{
-										bx::stringPrintf(code, "#extension GL_OES_standard_derivatives : enable\n");
-									}
-
-									if (NULL != bx::findIdentifierMatch(input, s_OES_texture_3D) )
-									{
-										bx::stringPrintf(code, "#extension GL_OES_texture_3D : enable\n");
-									}
-
-									if (NULL != bx::findIdentifierMatch(input, s_EXT_shadow_samplers) )
-									{
-										bx::stringPrintf(code
-											, "#extension GL_EXT_shadow_samplers : enable\n"
-											  "#define shadow2D shadow2DEXT\n"
-											  "#define shadow2DProj shadow2DProjEXT\n"
-											);
-									}
-
-									if (usesGpuShader5)
-									{
-										bx::stringPrintf(code
-											, "#extension GL_ARB_gpu_shader5 : enable\n"
-											);
-									}
-
-									if (usesPacking)
-									{
-										bx::stringPrintf(code
-											, "#extension GL_ARB_shading_language_packing : enable\n"
-											);
-									}
-
-									if (NULL != bx::findIdentifierMatch(input, "gl_FragDepth") )
-									{
-										bx::stringPrintf(code
-											, "#extension GL_EXT_frag_depth : enable\n"
-											  "#define gl_FragDepth gl_FragDepthEXT\n"
-											);
-									}
-
-									if (usesTextureArray)
-									{
-										bx::stringPrintf(code
-											, "#extension GL_EXT_texture_array : enable\n"
-											);
-									}
-
-									bx::stringPrintf(code,
-											"#define ivec2 vec2\n"
-											"#define ivec3 vec3\n"
-											"#define ivec4 vec4\n"
-											);
+									bx::stringPrintf(code, "#version %d\n", glsl);
 								}
 
 								code += preprocessor.m_preprocessed;
 
-								compiled = compileGLSLShader(cmdLine
-									, metal ? BX_MAKEFOURCC('M', 'T', 'L', 0) : essl
-									, code
-									, writer
-									);
+								if (glsl > 400)
+								{
+									bx::write(writer, uint16_t(0) );
+
+									uint32_t shaderSize = (uint32_t)code.size();
+									bx::write(writer, shaderSize);
+									bx::write(writer, code.c_str(), shaderSize);
+									bx::write(writer, uint8_t(0) );
+
+									compiled = true;
+								}
+								else
+								{
+									compiled = compileGLSLShader(cmdLine
+										, metal ? BX_MAKEFOURCC('M', 'T', 'L', 0) : essl
+										, code
+										, writer
+										);
+								}
 							}
 							else if (0 != spirv)
 							{
